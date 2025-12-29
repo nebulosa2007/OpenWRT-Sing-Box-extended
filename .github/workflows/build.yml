@@ -1,0 +1,282 @@
+permissions:
+  contents: write
+
+name: 📦 Build Sing-Box-extended for OpenWRT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get upstream latest release tag
+        id: get_tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: 'shtorm-7/sing-box-extended'
+        run: |
+          TAG=$(wget -qO- --header="Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/releases/latest" | grep -Po '"tag_name": "\K.+?(?=")')
+          echo "Latest upstream tag: $TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  build:
+    needs: check
+    if: ${{ needs.check.outputs.tag != 'SKIP' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch:
+          - openwrt-23.05
+          - openwrt-24.10
+        arch:
+          - aarch64_cortex-a53
+          - aarch64_cortex-a72
+          - aarch64_generic
+          - arm_arm1176jzf-s_vfp
+          - arm_arm926ej-s
+          - arm_cortex-a15_neon-vfpv4
+          - arm_cortex-a5_vfpv4
+          - arm_cortex-a7
+          - arm_cortex-a7_neon-vfpv4
+          - arm_cortex-a7_vfpv4
+          - arm_cortex-a8_vfpv3
+          - arm_cortex-a9
+          - arm_cortex-a9_neon
+          - arm_cortex-a9_vfpv3-d16
+          - arm_fa526
+          - arm_mpcore
+          - arm_xscale
+          - mips64_octeonplus
+          - mips_24kc
+          - mips_4kec
+          - mips_mips32
+          - mipsel_24kc
+          - mipsel_24kc_24kf
+          - mipsel_74kc
+          - mipsel_mips32
+          - x86_64
+        exclude:
+          - branch: openwrt-24.10
+            arch: arm_mpcore
+        include:
+          - branch: openwrt-24.10
+            arch: aarch64_cortex-a76
+    container:
+      image: openwrt/sdk:${{ matrix.arch }}-${{ matrix.branch }}
+      options: --user root
+    defaults: { run: { shell: bash } }
+    env:
+      UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SDK
+        if: ${{ matrix.branch == 'openwrt-23.05' || matrix.branch == 'openwrt-24.10' || matrix.branch == 'SNAPSHOT' }}
+        working-directory: /builder
+        run: HOME=/builder ./setup.sh
+
+      - name: Compile package
+        id: compile
+        working-directory: /builder
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          BRANCH: ${{ matrix.branch }}
+          UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          set -euo pipefail
+          
+          echo "============================================"
+          echo "Building sing-box-extended ${UPSTREAM_TAG}"
+          echo "Architecture: ${ARCH}"
+          echo "Branch: ${BRANCH}"
+          echo "============================================"
+
+          PKG_DIR="/builder/package/sing-box-extended"
+          mkdir -p "${PKG_DIR}/files"
+
+          echo "Downloading files from OpenWrt packages repository..."
+          
+          wget -O "${PKG_DIR}/Makefile" \
+            "https://raw.githubusercontent.com/openwrt/packages/refs/heads/master/net/sing-box/Makefile"
+          
+          wget -O "${PKG_DIR}/files/sing-box.init" \
+            "https://raw.githubusercontent.com/openwrt/packages/refs/heads/master/net/sing-box/files/sing-box.init"
+          chmod +x "${PKG_DIR}/files/sing-box.init"
+          
+          wget -O "${PKG_DIR}/files/sing-box.conf" \
+            "https://raw.githubusercontent.com/openwrt/packages/refs/heads/master/net/sing-box/files/sing-box.conf"
+          
+          sed -i 's/PKG_NAME:=sing-box$/PKG_NAME:=sing-box-extended/' "${PKG_DIR}/Makefile"
+
+          VERSION_CLEAN="${UPSTREAM_TAG#v}"
+          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${VERSION_CLEAN}/" "${PKG_DIR}/Makefile"
+          sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/shtorm-7/sing-box-extended.git|' "${PKG_DIR}/Makefile"
+          sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=${UPSTREAM_TAG}|" "${PKG_DIR}/Makefile"
+          sed -i 's|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=skip|' "${PKG_DIR}/Makefile"
+          sed -i 's|define Package/sing-box\b|define Package/sing-box-extended|g' "${PKG_DIR}/Makefile"
+          sed -i 's|^  TITLE:=.*|  TITLE:=Sing-box with extended features|' "${PKG_DIR}/Makefile"
+          sed -i 's|^  URL:=.*|  URL:=https://github.com/shtorm-7/sing-box-extended|' "${PKG_DIR}/Makefile"
+          sed -i 's|^PKG_MAINTAINER:=.*|PKG_MAINTAINER:=shtorm <sergeimaklagin7@gmail.com>|' "${PKG_DIR}/Makefile"
+          sed -i 's|$(eval $(call GoBinPackage,sing-box))|$(eval $(call GoBinPackage,sing-box-extended))|' "${PKG_DIR}/Makefile"
+          sed -i 's|$(eval $(call BuildPackage,sing-box))|$(eval $(call BuildPackage,sing-box-extended))|' "${PKG_DIR}/Makefile"
+          
+          echo "========== Modified Makefile =========="
+          head -n 160 "${PKG_DIR}/Makefile"
+          echo "========================================"
+          echo "Updating feeds..."
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a || true
+          ./scripts/feeds install golang || true
+
+          echo "Configuring package..."
+          make defconfig
+
+          echo "Starting compilation..."
+          make package/sing-box-extended/compile V=s 2>&1 | tee /builder/build.log
+          
+          if [ $? -eq 0 ]; then
+            echo "✓ Compilation successful"
+          else
+            echo "✗ Compilation failed"
+            exit 1
+          fi
+
+          echo "Searching for IPK files..."
+          IPK_FILES=$(find /builder/bin/packages -name "sing-box-extended*.ipk" 2>/dev/null)
+          
+          if [ -z "$IPK_FILES" ]; then
+            echo "✗ No IPK files found!"
+            echo "Build directory contents:"
+            find /builder/bin -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          ARTIFACT_DIR="/builder/artifacts"
+          mkdir -p "${ARTIFACT_DIR}"
+
+          echo "Collecting IPK files..."
+          for ipk in $IPK_FILES; do
+            cp -v "$ipk" "${ARTIFACT_DIR}/"
+          done
+
+          cd "${ARTIFACT_DIR}"
+          tar -cvf "/builder/ipk-${BRANCH}-${ARCH}.tar" *.ipk
+          
+          echo "============================================"
+          echo "✓ Build completed successfully"
+          echo "Artifact: ipk-${BRANCH}-${ARCH}.tar"
+          echo "============================================"
+          tar -tvf "/builder/ipk-${BRANCH}-${ARCH}.tar"
+
+      - name: Compress build logs
+        if: ${{ always() }}
+        working-directory: /builder
+        env:
+          ARCH: ${{ matrix.arch }}
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          if [ -f /builder/build.log ]; then
+            tar -cJvf logs-$BRANCH-$ARCH.tar.xz /builder/build.log
+          else
+            echo "No build.log found — skipping compression."
+          fi
+
+      - name: Upload packages
+        if: ${{ steps.compile.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-${{ matrix.branch }}-${{ matrix.arch }}
+          path: /builder/ipk-${{ matrix.branch }}-${{ matrix.arch }}.tar
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.branch }}-${{ matrix.arch }}
+          path: /builder/logs-${{ matrix.branch }}-${{ matrix.arch }}.tar.xz
+          if-no-files-found: ignore
+
+  gh-pages:
+    needs: [check, build]
+    if: ${{ needs.check.outputs.tag != 'SKIP' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ipk-*
+          merge-multiple: true
+
+      - name: Prepare files
+        run: |
+          mkdir -p public
+          find . -name 'ipk-*.tar' -exec tar -C ./public -xvf {} \;
+          cat <<EOF > public/public.key
+          untrusted comment: Sing-box-extended OpenWrt repo
+          RWRT/Cfg5ReIbqWME8QTUQ1FKxp8FTr9M9g1vDsL8uIdRyP5TTNAk4QA
+          EOF
+
+      - name: Deploy to GH pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          full_commit_message: 'Sing-Box-extended ${{ needs.check.outputs.tag }}'
+          force_orphan: true
+
+  release:
+    needs: [check, build, gh-pages]
+    if: ${{ needs.check.outputs.tag != 'SKIP' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        branch:
+          - openwrt-23.05
+          - openwrt-24.10
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ipk-${{ matrix.branch }}-*
+          merge-multiple: true
+
+      - name: Prepare files
+        env:
+          BRANCH: ${{ matrix.branch }}
+        run: |
+          find . -name "ipk-$BRANCH-*.tar" -exec tar -xvf {} --wildcards '*.ipk' \;
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          tag_name: ${{ needs.check.outputs.tag }}-${{ matrix.branch }}
+          name: ${{ needs.check.outputs.tag }} for OpenWrt ${{ matrix.branch }}
+          target_commitish: gh-pages
+          body: |
+            ### Sing-box-extended ${{ needs.check.outputs.tag }} for OpenWrt ${{ matrix.branch }}
+
+            -----
+            Check the package architecture of your device using the command:
+            ```
+            # awk -F\' '/DISTRIB_ARCH/ {print $2}' /etc/openwrt_release
+            ```
+          files: ./**/*.ipk
