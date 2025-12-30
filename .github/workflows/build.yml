@@ -1,7 +1,7 @@
 permissions:
   contents: write
 
-name: 📦 Build Sing-Box-extended for OpenWRT
+name: Sing-Box-extended for OpenWRT
 
 on:
   workflow_dispatch:
@@ -35,41 +35,41 @@ jobs:
       fail-fast: false
       matrix:
         branch:
-          - openwrt-23.05
+        # - openwrt-23.05
           - openwrt-24.10
         arch:
-          - aarch64_cortex-a53
-          - aarch64_cortex-a72
-          - aarch64_generic
-          - arm_arm1176jzf-s_vfp
-          - arm_arm926ej-s
-          - arm_cortex-a15_neon-vfpv4
-          - arm_cortex-a5_vfpv4
-          - arm_cortex-a7
-          - arm_cortex-a7_neon-vfpv4
-          - arm_cortex-a7_vfpv4
-          - arm_cortex-a8_vfpv3
-          - arm_cortex-a9
-          - arm_cortex-a9_neon
-          - arm_cortex-a9_vfpv3-d16
-          - arm_fa526
-          - arm_mpcore
-          - arm_xscale
-          - mips64_octeonplus
-          - mips_24kc
-          - mips_4kec
-          - mips_mips32
+          # - aarch64_cortex-a53
+          # - aarch64_cortex-a72
+          # - aarch64_generic
+          # - arm_arm1176jzf-s_vfp
+          # - arm_arm926ej-s
+          # - arm_cortex-a15_neon-vfpv4
+          # - arm_cortex-a5_vfpv4
+          # - arm_cortex-a7
+          # - arm_cortex-a7_neon-vfpv4
+          # - arm_cortex-a7_vfpv4
+          # - arm_cortex-a8_vfpv3
+          # - arm_cortex-a9
+          # - arm_cortex-a9_neon
+          # - arm_cortex-a9_vfpv3-d16
+          # - arm_fa526
+          # - arm_mpcore
+          # - arm_xscale
+          # - mips64_octeonplus
+          # - mips_24kc
+          # - mips_4kec
+          # - mips_mips32
           - mipsel_24kc
-          - mipsel_24kc_24kf
-          - mipsel_74kc
-          - mipsel_mips32
-          - x86_64
-        exclude:
-          - branch: openwrt-24.10
-            arch: arm_mpcore
-        include:
-          - branch: openwrt-24.10
-            arch: aarch64_cortex-a76
+          # - mipsel_24kc_24kf
+          # - mipsel_74kc
+          # - mipsel_mips32
+          # - x86_64
+        # exclude:
+        #   - branch: openwrt-24.10
+        #     arch: arm_mpcore
+        # include:
+        #   - branch: openwrt-24.10
+        #     arch: aarch64_cortex-a76
     container:
       image: openwrt/sdk:${{ matrix.arch }}-${{ matrix.branch }}
       options: --user root
@@ -81,7 +81,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup SDK
-        if: ${{ matrix.branch == 'openwrt-23.05' || matrix.branch == 'openwrt-24.10' || matrix.branch == 'SNAPSHOT' }}
         working-directory: /builder
         run: HOME=/builder ./setup.sh
 
@@ -116,23 +115,27 @@ jobs:
           
           wget -O "${PKG_DIR}/files/sing-box.conf" \
             "https://raw.githubusercontent.com/openwrt/packages/refs/heads/master/net/sing-box/files/sing-box.conf"
-          
-          sed -i 's/PKG_NAME:=sing-box$/PKG_NAME:=sing-box-extended/' "${PKG_DIR}/Makefile"
+
+          echo "Adapting Makefile for sing-box-extended..."
+          sed -i 's/^PKG_NAME:=sing-box$/PKG_NAME:=sing-box-extended/' "${PKG_DIR}/Makefile"
 
           VERSION_CLEAN="${UPSTREAM_TAG#v}"
           sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${VERSION_CLEAN}/" "${PKG_DIR}/Makefile"
           sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/shtorm-7/sing-box-extended.git|' "${PKG_DIR}/Makefile"
           sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=${UPSTREAM_TAG}|" "${PKG_DIR}/Makefile"
           sed -i 's|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=skip|' "${PKG_DIR}/Makefile"
-          sed -i 's|define Package/sing-box\b|define Package/sing-box-extended|g' "${PKG_DIR}/Makefile"
+          sed -i 's|^PKG_MAINTAINER:=.*|PKG_MAINTAINER:=shtorm <sergeimaklagin7@gmail.com>|' "${PKG_DIR}/Makefile"
+          sed -i 's/Package\/sing-box-default/Package\/sing-box-extended-default/g' "${PKG_DIR}/Makefile"
+          sed -i 's/$(Package\/sing-box-default)/$(Package\/sing-box-extended-default)/g' "${PKG_DIR}/Makefile"
+          sed -i 's/Package\/sing-box\b/Package\/sing-box-extended/g' "${PKG_DIR}/Makefile"
+          sed -i 's/PACKAGE_sing-box\b/PACKAGE_sing-box-extended/g' "${PKG_DIR}/Makefile"
           sed -i 's|^  TITLE:=.*|  TITLE:=Sing-box with extended features|' "${PKG_DIR}/Makefile"
           sed -i 's|^  URL:=.*|  URL:=https://github.com/shtorm-7/sing-box-extended|' "${PKG_DIR}/Makefile"
-          sed -i 's|^PKG_MAINTAINER:=.*|PKG_MAINTAINER:=shtorm <sergeimaklagin7@gmail.com>|' "${PKG_DIR}/Makefile"
-          sed -i 's|$(eval $(call GoBinPackage,sing-box))|$(eval $(call GoBinPackage,sing-box-extended))|' "${PKG_DIR}/Makefile"
-          sed -i 's|$(eval $(call BuildPackage,sing-box))|$(eval $(call BuildPackage,sing-box-extended))|' "${PKG_DIR}/Makefile"
+          sed -i 's/$(eval $(call BuildPackage,sing-box))/$(eval $(call BuildPackage,sing-box-extended))/' "${PKG_DIR}/Makefile"
+          sed -i 's/$(eval $(call BuildPackage,sing-box-tiny))/$(eval $(call BuildPackage,sing-box-extended-tiny))/' "${PKG_DIR}/Makefile"
           
           echo "========== Modified Makefile =========="
-          head -n 160 "${PKG_DIR}/Makefile"
+          head -n 200 "${PKG_DIR}/Makefile"
           echo "========================================"
           echo "Updating feeds..."
           ./scripts/feeds update -a || true
@@ -144,7 +147,7 @@ jobs:
 
           echo "Starting compilation..."
           make package/sing-box-extended/compile V=s 2>&1 | tee /builder/build.log
-          
+
           if [ $? -eq 0 ]; then
             echo "✓ Compilation successful"
           else
@@ -249,7 +252,7 @@ jobs:
       max-parallel: 1
       matrix:
         branch:
-          - openwrt-23.05
+          # - openwrt-23.05
           - openwrt-24.10
     steps:
       - name: Download artifacts
