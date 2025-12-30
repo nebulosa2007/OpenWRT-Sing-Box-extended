@@ -142,8 +142,9 @@ jobs:
 
           sed -i "s|^PKG_NAME:=.*|PKG_NAME:=sing-box-extended|" "${PKG_DIR}/Makefile"
           sed -i "s|^PKG_VERSION:=.*|PKG_VERSION:=${VERSION_CLEAN}|" "${PKG_DIR}/Makefile"
-          sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/shtorm-7/sing-box-extended.git|" "${PKG_DIR}/Makefile"
+          sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/shtorm-7/sing-box-extended/tar.gz/\$(PKG_SOURCE_VERSION)?|" "${PKG_DIR}/Makefile"
           sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=${UPSTREAM_TAG}|" "${PKG_DIR}/Makefile"
+          sed -i "s|^PKG_HASH:=.*|PKG_HASH:=skip|" "${PKG_DIR}/Makefile"
           sed -i "s|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=skip|" "${PKG_DIR}/Makefile"
           sed -i "s|^PKG_MAINTAINER:=.*|PKG_MAINTAINER:=shtorm <sergeimaklagin7@gmail.com>|" "${PKG_DIR}/Makefile"
 
@@ -154,10 +155,9 @@ jobs:
           sed -i 's|TITLE:=.*|TITLE:=Sing-box with extended features|' "${PKG_DIR}/Makefile"
           sed -i 's|URL:=.*|URL:=https://github.com/shtorm-7/sing-box-extended|' "${PKG_DIR}/Makefile"
 
-          sed -i 's|sing-box-extended-extended|sing-box-extended|g' "${PKG_DIR}/Makefile"
+          sed -i 's/depends on PACKAGE_sing-box/depends on PACKAGE_sing-box-extended/g' "${PKG_DIR}/Makefile"
+          sed -i 's/Package\/sing-box-extended-tiny\/description:=$(Package\/sing-box-extended\/description)/Package\/sing-box-extended-tiny\/description:=$(Package\/sing-box-extended\/description)/' "${PKG_DIR}/Makefile"
 
-          sed -i 's|Package/sing-box-extended-tiny/description:=$(Package/sing-box-extended/description)|Package/sing-box-extended-tiny/description:=$(Package/sing-box-extended/description)|' "${PKG_DIR}/Makefile"
-          
           echo "========== Modified Makefile =========="
           head -n 200 "${PKG_DIR}/Makefile"
           echo "========================================"
